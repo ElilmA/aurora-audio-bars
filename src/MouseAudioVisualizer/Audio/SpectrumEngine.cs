@@ -20,8 +20,8 @@ public sealed class SpectrumEngine
     private readonly float[] _smooth;   // 平滑后的 band 能量
     private readonly float[] _levels;   // 输出 0..1
 
-    private float _attack = 0.45f;   // 上升系数(越大越快)
-    private float _decay = 0.12f;    // 下降系数(越小越慢)
+    private float _attack = 0.6f;     // 上升系数(越大越快)
+    private float _decay = 0.35f;     // 下降系数(越大越快，降滞后)
     private float _gain = 1.0f;      // 幅度增益
     private float _agcLevel = 0f;    // AGC 估计电平
     private bool _agcEnabled = true;
@@ -84,7 +84,7 @@ public sealed class SpectrumEngine
         float gain = _gain;
         if (_agcEnabled)
         {
-            float attack = maxMag > _agcLevel ? 0.05f : 0.0015f;
+            float attack = maxMag > _agcLevel ? 0.12f : 0.05f;   // AGC 快速跟随(防旧增益滞后)
             _agcLevel += (maxMag - _agcLevel) * attack;
             if (_agcLevel > 0.0001f)
             {

@@ -64,8 +64,11 @@ public sealed class EdgeRenderer
             // 2) 目标高度映射：静音~3%，小音量~15-25%，正常~40-60%，大声~80-100%
             float targetH = MathF.Min(1f, 0.03f + vol * 0.95f);
 
-            // 3) attack / release 平滑：上升快、回落慢 → 防抖动、似液体
-            float k = targetH > _smoothH ? 0.55f : 0.12f;
+            // 3) attack / release 平滑：目标实时跟随
+            //    attack ≈ 30-60ms（k=0.7@16ms 帧 → 约 33ms 达 90%）
+            //    release ≈ 50-120ms（k=0.28@16ms 帧 → 约 100ms 达 90%）
+            //    主体必须「几乎立即」响应，拖影承担视觉惯性。
+            float k = targetH > _smoothH ? 0.72f : 0.30f;
             _smoothH += (targetH - _smoothH) * k;
             if (_smoothH > 1f) _smoothH = 1f;
             if (_smoothH < 0f) _smoothH = 0f;

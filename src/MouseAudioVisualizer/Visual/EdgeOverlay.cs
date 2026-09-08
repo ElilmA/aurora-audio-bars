@@ -45,7 +45,7 @@ public sealed class EdgeOverlay : IDisposable
         CreateWindows();
         _renderTimer = new DispatcherTimer(DispatcherPriority.Render)
         {
-            Interval = TimeSpan.FromMilliseconds(33),
+            Interval = TimeSpan.FromMilliseconds(16), // 60 FPS：快速响应音频
         };
         _renderTimer.Tick += (_, _) => Render();
     }

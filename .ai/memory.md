@@ -15,7 +15,9 @@
 - **平滑参数**:Attack=0.45 / Decay=0.12(实测合理)。AGC attack=0.05 / decay=0.0015。
 - **窗口**:两个 BarWindow(左右),AllowsTransparency + WindowStyle.None + WS_EX_TRANSPARENT|TOOLWINDOW|NOACTIVATE|LAYERED。
 - **定位**:虚拟屏幕边界用 GetSystemMetrics(SM_XVIRTUALSCREEN 等),左条贴 vmLeft,右条贴 vmRight-barW。barW = 1mm @96dpi ≈ 4px。
-- **渲染**:EdgeRenderer v5(2026-09-08 Aurora 版):**完整 360° 色相连续渐变**(紫→蓝→青→绿→黄→橙→红→粉→紫,无硬切),hue drift 12s/圈极缓流动;左右相位不同(左 hueStart=270 紫系,右 180 青系,同色谱平衡);顶部液态圆头=bloom 隆起(bright*1.14 近顶 12px)+16px 光晕尾平方衰减;x 向中心亮边缘淡(内部光晕);saturation/brightness 微随音量。残影修复保留(每帧整图 BGRA 清零)。
+- **视觉**:(v5 Aurora,2026-09-08)完整 360° 色相连续渐变(紫→蓝→青→绿→黄→橙→红→粉→紫),无硬切;hue drift 12s/圈极缓流动;左右相位不同(左 hueStart=270 紫系、右 180 青系);顶部液态圆头=bloom 隆起+16px 光晕尾;x 向中心亮边缘淡;饱和度/亮度微随音量;每帧整图 BGRA 清零(防残影)。
+- **响应速度**(2026-09-08 优化):渲染 16ms/帧(60fps);smoothH attack=0.72 / release=0.30(↑≈30-50ms,↓≈100ms);频带平滑 attack=0.6/decay=0.35;AGC attack=0.12/decay=0.05。实测 0.5s 间歇音:0.68→0.04→0.69→0.04→0.6→0.08 全部跟随,无滞后。链路:WASAPI(46ms 块)→FFT→attack/decay→smoothH→渲染,trail 独立不参与 currentHeight。
+- **拖影**:4 帧历史环,alpha 0.16/0.11/0.07/0.04,≤8% 主体高+6px 柔边,主体后画覆盖。
 - **DPI**:manifest 声明 PerMonitorV2;条宽按 96 DPI 换算(多 DPI 混用时略有偏差,已记录为已知限制)。
 - **入口**:自定义 Program.Main(无 App.xaml),Application.Run 阻塞 + Startup 事件启动 AppHost。
 
