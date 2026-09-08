@@ -63,7 +63,20 @@ public sealed class EdgeRenderer
             float fillPx = _smoothH * _height;
             const float glowPx = 24f; // 顶部光晕过渡区
 
-            // 4) 绘制：从底部到 fillPx 连续填充；顶部 glow 柔化淡出
+            // 4) 先清空整张 bitmap：上一帧内容必须完全消失（残影 bug 修复）
+            for (int y = 0; y < _height; y++)
+            {
+                byte* row = px + y * stride;
+                for (int x = 0; x < _width; x++)
+                {
+                    row[x * 4] = 0;
+                    row[x * 4 + 1] = 0;
+                    row[x * 4 + 2] = 0;
+                    row[x * 4 + 3] = 0;
+                }
+            }
+
+            // 5) 绘制：从底部到 fillPx 连续填充；顶部 glow 柔化淡出
             for (int y = 0; y < _height; y++)
             {
                 float rowFromBottom = _height - 1 - y;
