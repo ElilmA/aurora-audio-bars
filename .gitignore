@@ -4,3 +4,7 @@ obj/
 *.user
 *.suo
 publish/
+*.wav
+*.mp3
+*.png
+.DS_Store

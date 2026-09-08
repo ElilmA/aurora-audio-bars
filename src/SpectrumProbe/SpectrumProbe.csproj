@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>MouseAudioVisualizer</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="..\MouseAudioVisualizer\Audio\AudioCapture.cs" />
+    <Compile Include="..\MouseAudioVisualizer\Audio\SpectrumEngine.cs" />
+    <Compile Include="..\MouseAudioVisualizer\Audio\SpectrumFrame.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="NAudio" Version="2.2.1" />
+  </ItemGroup>
+
+</Project>
