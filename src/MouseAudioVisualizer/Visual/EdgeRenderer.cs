@@ -67,7 +67,6 @@ public sealed class EdgeRenderer
                 float e1 = levels.Length > i1 ? levels[i1] : 0f;
                 float e = e0 + (e1 - e0) * frac;
                 float lv = MathF.Min(1f, e * intensity);
-                if (lv <= 0.01f) continue;
 
                 // 下一行能量变化率 → 波浪前沿亮线（“推动”感）
                 float eE = 0f;
@@ -82,8 +81,9 @@ public sealed class EdgeRenderer
                 }
                 float edge = MathF.Min(1f, MathF.Abs(e - eE) * 10f);
 
-                float brightness = 0.5f + 0.5f * lv;
-                float a = alpha * MathF.Min(1f, 0.6f + 0.4f * lv + edge * 0.6f);
+                // 底部基础渐变常亮 + 能量增强：整条始终连续，低能量时底色仍在
+                float brightness = 0.38f + 0.62f * lv;
+                float a = alpha * MathF.Min(1f, 0.5f + 0.35f * lv + edge * 0.4f);
 
                 byte r = (byte)(_rowColor[y * 3] * brightness);
                 byte g = (byte)(_rowColor[y * 3 + 1] * brightness);
