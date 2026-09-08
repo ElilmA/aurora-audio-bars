@@ -31,24 +31,6 @@ public sealed class TrayIcon : IDisposable
             toggle.Checked = _host.IsEnabled;
         };
 
-        var style = new ToolStripMenuItem("样式");
-        foreach (var (label, value) in new[]
-                 {
-                     ("环形频谱", VisualStyle.Ring),
-                     ("波纹", VisualStyle.Ripple),
-                 })
-        {
-            var item = new ToolStripMenuItem(label) { Checked = value == VisualStyle.Ring };
-            var v = value;
-            item.Click += (_, _) =>
-            {
-                _host.SetStyle(v);
-                foreach (ToolStripMenuItem s in style.DropDownItems) s.Checked = false;
-                item.Checked = true;
-            };
-            style.DropDownItems.Add(item);
-        }
-
         var intensity = new ToolStripMenuItem("强度");
         foreach (var (label, value) in new[] { ("低 0.6x", 0.6f), ("中 1.0x", 1.0f), ("高 1.6x", 1.6f) })
         {
@@ -89,7 +71,6 @@ public sealed class TrayIcon : IDisposable
 
         menu.Items.Add(toggle);
         menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add(style);
         menu.Items.Add(intensity);
         menu.Items.Add(opacity);
         menu.Items.Add(new ToolStripSeparator());

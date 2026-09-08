@@ -4,11 +4,10 @@ using MouseAudioVisualizer.Visual;
 
 namespace MouseAudioVisualizer;
 
-/// <summary>应用宿主：组装音频引擎、悬浮层与托盘控制。</summary>
 public sealed class AppHost : IDisposable
 {
     private readonly AudioEngine _engine;
-    private CursorOverlay? _overlay;
+    private EdgeOverlay? _overlay;
     private Shell.TrayIcon? _tray;
     private bool _enabled = true;
 
@@ -24,7 +23,7 @@ public sealed class AppHost : IDisposable
     public void Start()
     {
         _engine.Start();
-        _overlay = new CursorOverlay(_engine) { Intensity = 1.0f, Opacity2 = 0.9f };
+        _overlay = new EdgeOverlay(_engine) { Intensity = 1.0f, Opacity2 = 0.9f };
         _overlay.Start();
         _tray = new Shell.TrayIcon(this);
     }
@@ -49,10 +48,7 @@ public sealed class AppHost : IDisposable
         if (_overlay != null) _overlay.Opacity2 = value;
     }
 
-    public void SetStyle(VisualStyle style)
-    {
-        if (_overlay != null) _overlay.Style = style;
-    }
+    public void SetStyle(int _) { }
 
     public void SetAutoStart(bool enabled)
     {
@@ -64,7 +60,7 @@ public sealed class AppHost : IDisposable
     public void Dispose()
     {
         _tray?.Dispose();
-        _overlay?.Close();
+        _overlay?.Dispose();
         _engine.Dispose();
     }
 }

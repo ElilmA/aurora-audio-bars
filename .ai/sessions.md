@@ -1,35 +1,33 @@
-# 会话记录 - 2026-09-08
+# 会话记录 - 2026-09-08 (会话2)
 
 ## 任务
 
-按 PLAN.md 实现 Mouse Audio Visualizer(WASAPI 音频 → FFT → 跟随鼠标的悬浮环形频谱)。
+将可视化样式从"跟随鼠标的环形频谱"改为"屏幕两边彩色竖向 1mm 宽、全屏高的音频可视化"。
 
 ## 完成内容
 
-- 安装 .NET 8 SDK 8.0.424(环境原只有 runtime)、配置 nuget.org 源
-- 搭建 src/MouseAudioVisualizer(WPF + WinForms + NAudio 2.2.1)
-- M1:AudioCapture(loopback)/SpectrumEngine(FFT 2048/Hann/48 对数频带/Attack-Decay 平滑/AGC)
-- M2:RingRenderer(WriteableBitmap 极坐标环形)+ CursorOverlay(透明置顶)
-- M3:鼠标跟随 + 点击穿透 + CPU 优化(见 memory.md 教训)
-- M4:PerMonitorV2 manifest、托盘(开关/样式/强度/透明度/开机自启/退出)、波纹样式
-- M5:README 更新、.gitignore 增加 *.wav/*.png、.ai 记录
-- 调试工具:src/SpectrumProbe(控制台频谱数值验证)
+- 新增 Visual/EdgeRenderer.cs:竖向频谱渲染器,48 频带分段,从底部(低频)向上,颜色按 hue 渐变,左右条对称(flip)
+- 新增 Visual/EdgeOverlay.cs:左右两个 BarWindow(1mm 宽 ≈4px @96dpi,高=虚拟屏幕全高),透明置顶点击穿透,定位用 GetSystemMetrics 虚拟屏幕边界
+- 删除 CursorOverlay.cs / RingRenderer.cs(环形/波纹样式)
+- AppHost 改为使用 EdgeOverlay;TrayIcon 移除"样式"子菜单
+- Native.cs 增加 GetSystemMetrics
+- README.md / .ai/memory.md / .ai/sessions.md 更新
 
 ## 修改文件
 
-- src/MouseAudioVisualizer/{Program.cs, Audio/*, Visual/*, Shell/TrayIcon.cs, app.manifest, MouseAudioVisualizer.csproj}
-- src/SpectrumProbe/{Program.cs, SpectrumProbe.csproj}
-- README.md、.gitignore、.ai/memory.md
+- src/MouseAudioVisualizer/Visual/{EdgeRenderer.cs, EdgeOverlay.cs(新), Native.cs, CursorOverlay.cs(删), RingRenderer.cs(删)}
+- src/MouseAudioVisualizer/{Program.cs, Shell/TrayIcon.cs}
+- README.md, .ai/memory.md
 
 ## 验证结果
 
-- probe 频谱数值正确(440Hz 频带定位、AGC 峰值 0.87)
-- 窗口中心=光标(精确 1:1,双位置实测)
-- 点击穿透样式位 0x080800A8 全部生效
-- CPU 音频播放时 1.17% 单核(优化前 98%)
+- 左右条窗口定位:右条(1916,0,1920,1087)、左条(-1920,0,-1916,1087) 4px 宽全高
+- PrintWindow 验证左条渲染正常(渐变颜色,35/36 行)
+- 右条截图确认粉/紫渐变
+- CPU 播放时 ~0% 单核
 
 ## 后续注意事项
 
-- 用真实音乐内容测试平滑/AGC 效果
-- 单文件发布未做
-- 不要在公开仓库提交任何密钥/隐私配置(已检查无敏感内容)
+- 副屏(-1920)用 CopyFromScreen 截图不可靠,需用 PrintWindow 验证窗口内容
+- 多 DPI 显示器混用未实测
+- 真实音乐内容未测
