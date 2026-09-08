@@ -66,7 +66,21 @@ public sealed class EdgeRenderer
                 float e0 = levels.Length > i0 ? levels[i0] : 0f;
                 float e1 = levels.Length > i1 ? levels[i1] : 0f;
                 float e = e0 + (e1 - e0) * frac;
-                float lv = MathF.Min(1f, e * intensity);
+
+                // 进度条填充规则：行位置比例 pos（0=底部 → 1=顶部）
+                // 该行的“门槛”= e（能量越高推得越高）。
+                // 低于门槛的行从底部开始全部点亮，构成“从底部向上推进”的连续填充；
+                // 能量弱时门槛低，点亮的行少（底部区域），上部透明。
+                float rowPos = 1f - (float)y / Math.Max(1, _height - 1); // 0=底部 1=顶部
+                float fill = e * intensity * 1.15f; // 填充门槛（接近1时整条亮）
+                float visibleDepth = fill - rowPos; // >0 表示在填充区内
+
+                if (visibleDepth <= -0.02f) continue; // 明显未填充 → 透明
+
+                // 填充边缘软过渡：-0.02..0.08 之间渐亮，底部全亮
+                float soft = (visibleDepth + 0.02f) / 0.1f;
+                float fillFactor = Math.Clamp(soft, 0f, 1f);
+                float fillPower = MathF.Pow(fillFactor, 0.7f); // 伽马提亮边缘
 
                 // 下一行能量变化率 → 波浪前沿亮线（“推动”感）
                 float eE = 0f;
@@ -81,9 +95,8 @@ public sealed class EdgeRenderer
                 }
                 float edge = MathF.Min(1f, MathF.Abs(e - eE) * 10f);
 
-                // 底部基础渐变常亮 + 能量增强：整条始终连续，低能量时底色仍在
-                float brightness = 0.38f + 0.62f * lv;
-                float a = alpha * MathF.Min(1f, 0.5f + 0.35f * lv + edge * 0.4f);
+                float brightness = 0.45f + 0.55f * fillPower + 0.35f * edge * fillPower;
+                float a = alpha * MathF.Min(1f, fillPower * (0.75f + 0.15f * edge));
 
                 byte r = (byte)(_rowColor[y * 3] * brightness);
                 byte g = (byte)(_rowColor[y * 3 + 1] * brightness);
