@@ -27,6 +27,10 @@ public sealed class EdgeRenderer
     private readonly long _t0;          // 用于 hue drift 计时
 
     private float _smoothH;     // 平滑后的填充高度（0..1）
+    private readonly float[] _trailFrames = new float[TrailFrameCount]; // 有限历史高度环
+    private int _trailIdx;
+    private const int TrailFrameCount = 4;   // 只保留最近 4 帧（短暂视觉惯性）
+    private const float TrailMaxRatio = 1.08f; // 拖影最多延伸到主体高度的 8%（短尾）
 
     public EdgeRenderer(int widthPx, int heightPx, int bandCount, float hueStart)
     {
@@ -81,6 +85,10 @@ public sealed class EdgeRenderer
 
             float fillPx = _smoothH * _height;
 
+            // 4a) 有限生命周期 trail：把当前高度写入历史环（入队后取最近 4 帧）
+            _trailFrames[_trailIdx] = _smoothH;
+            _trailIdx = (_trailIdx + 1) % TrailFrameCount;
+
             // 5) 色谱流动相位：12 秒走完一整圈（很慢，不像彩灯）
             float drift = ((Environment.TickCount64 - _t0) % 12000L) / 12000f * 360f;
 
@@ -91,7 +99,54 @@ public sealed class EdgeRenderer
             const float glowTail = 16f;   // 顶部光晕尾（超过 fillPx 向上）
             const float bloomPx = 12f;    // 近顶 bright bloom 区
 
-            // 7) 绘制：核心 0→fillPx + 顶部液态圆头（bloom + 光晕尾）
+            // 7a) 先绘制 trail 层（历史高度带，低 alpha，快速衰减）：
+            //     只画历史高度高于当前主体之上的部分，且限制不超过主体高度的 8%，
+            //     短尾、柔、透明；主体随后覆盖。
+            //     历史帧只存在最近 4 帧 → 主体下降后旧高位自然回收，无永久残留。
+            for (int i = 0; i < TrailFrameCount; i++)
+            {
+                float histH = _trailFrames[(_trailIdx + TrailFrameCount - 1 - i) % TrailFrameCount];
+                // 最新帧最近（i=0 -> alpha 高），越旧越淡
+                float trailAlphaMul = i switch { 0 => 0.16f, 1 => 0.11f, 2 => 0.07f, _ => 0.04f };
+
+                float histPx = histH * _height;
+                if (histPx <= fillPx + 0.5f) continue;             // 低于主体 → 被主体覆盖，省略
+
+                // 拖影上界 clamp：不超过主体高度的 TrailMaxRatio（短尾，不长）
+                float trailTop = MathF.Min(histPx, fillPx * TrailMaxRatio + 1f) + 6f;
+
+                for (int y = 0; y < _height; y++)
+                {
+                    float rowFromBottom = _height - 1 - y;
+                    if (rowFromBottom <= fillPx) continue;         // 主体区交给主体绘制
+                    if (rowFromBottom > trailTop) continue;
+
+                    float pos = _rowPos[y];
+                    float hue = _hueStart - pos * 360f + drift;
+                    hue %= 360f;
+                    if (hue < 0f) hue += 360f;
+                    HsvToRgb(hue, s, v, out byte r, out byte g, out byte b);
+
+                    float t = (trailTop - rowFromBottom) / 6f;      // 顶缘柔和淡出
+                    float a = alpha * trailAlphaMul * Math.Clamp(t, 0f, 1f);
+                    if (a <= 0.003f) continue;
+
+                    byte* row = px + y * stride;
+                    int halfWl = halfW;
+                    for (int x = 0; x < _width; x++)
+                    {
+                        int dx = Math.Abs(x - halfWl);
+                        float edge = dx <= 0 ? 1f : 0.88f + 0.12f * (1f - (float)dx / Math.Max(1f, halfWl));
+                        int o = x * 4;
+                        row[o] = (byte)(b * 0.7 * edge);
+                        row[o + 1] = (byte)(g * 0.7 * edge);
+                        row[o + 2] = (byte)(r * 0.7 * edge);
+                        row[o + 3] = (byte)(a * 255);
+                    }
+                }
+            }
+
+            // 7b) 绘制主体：核心 0→fillPx + 顶部液态圆头（bloom + 光晕尾）
             for (int y = 0; y < _height; y++)
             {
                 float rowFromBottom = _height - 1 - y;
