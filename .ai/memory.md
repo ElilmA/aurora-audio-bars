@@ -15,8 +15,7 @@
 - **平滑参数**:Attack=0.45 / Decay=0.12(实测合理)。AGC attack=0.05 / decay=0.0015。
 - **窗口**:两个 BarWindow(左右),AllowsTransparency + WindowStyle.None + WS_EX_TRANSPARENT|TOOLWINDOW|NOACTIVATE|LAYERED。
 - **定位**:虚拟屏幕边界用 GetSystemMetrics(SM_XVIRTUALSCREEN 等),左条贴 vmLeft,右条贴 vmRight-barW。barW = 1mm @96dpi ≈ 4px。
-- **宽度**:EdgeOverlay.SetBarWidthMm(mm) 动态重建 bitmap/renderer 并重新定位;托盘"条宽"菜单(1/2/3/5/8mm),CLI --bar-width-mm=N。barW = round(mm*dpi/25.4)。
-- **左右一致**:v3(2026-09-08,用户要求)去掉右条 flip,左右渲染完全相同(实测同 y 像素一致)。颜色连续彩虹渐变(饱和度 0.95)。
+- **渲染**:EdgeRenderer v4(2026-09-08 最终版,用户七点标准要求):**推翻频带柱思路**。单一全局音量(RMS+Peak 聚合)→ 单一填充高度;attack 0.55 / release 0.12 平滑(实测 0.37→0.75 快升、0.90→0.64 缓落);填充区连续无分块;霓虹渐变蓝(底)→紫→粉→红橙(顶),顶部 24px 光晕淡出。宽度可调(EdgeOverlay.SetBarWidthMm + 托盘"条宽" 1/2/3/5/8mm + CLI --bar-width-mm)。左右两条相同渲染(对称)。
 - **DPI**:manifest 声明 PerMonitorV2;条宽按 96 DPI 换算(多 DPI 混用时略有偏差,已记录为已知限制)。
 - **入口**:自定义 Program.Main(无 App.xaml),Application.Run 阻塞 + Startup 事件启动 AppHost。
 

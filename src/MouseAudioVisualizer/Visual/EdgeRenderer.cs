@@ -4,32 +4,35 @@ using MouseAudioVisualizer.Audio;
 namespace MouseAudioVisualizer.Visual;
 
 /// <summary>
-/// 竖向频谱渲染器（连续版）：
-/// 整条高度逐行渲染，每行对应一个“连续频带位置”（对数谱插值，无分块感），
-/// 亮度 = 相邻频带线性插值能量 + 波浪前沿（能量变化率）亮线，
-/// 呈现“从底部向上推动的波形”效果。底部低频、顶部高频，彩虹连续渐变。
+/// 纵向能量条渲染器（重写版）：
+/// 不是频谱柱。呈现为「从屏幕底部向上生长的连续炫彩发光能量带」。
+///
+/// - 驱动：全局音量（RMS + Peak 聚合）→ 单一填充高度（0..1）
+/// - 高度：attack 快 / release 慢 平滑，防抖动
+/// - 形态：底部↔填充高度之间整段连续填充，无分块、无断点
+/// - 渐变色：蓝(底) → 紫 → 粉 → 红/橙(顶)，高饱和高亮度模拟霓虹
+/// - 顶部：约 24px 光晕淡出，边缘柔和（液态顶部）
+/// - 两侧窗口调用同一 renderer 即天然对称。
 /// </summary>
 public sealed class EdgeRenderer
 {
     private readonly int _width;
     private readonly int _height;
     private readonly int _bandCount;
-    private readonly float[] _rowBandPos;   // 行 → 连续频带位置 [0..bandCount-1]
-    private readonly byte[] _rowColor;      // 行 → 基础色 RGB (r,g,b)
+    private readonly byte[] _rowColor;   // 行 → 绝对位置的渐变 RGB (r,g,b)，底蓝顶橙
+
+    private float _smoothH;     // 平滑后的填充高度（0..1）
 
     public EdgeRenderer(int widthPx, int heightPx, int bandCount)
     {
         _width = widthPx;
         _height = heightPx;
         _bandCount = bandCount;
-        _rowBandPos = new float[heightPx];
         _rowColor = new byte[heightPx * 3];
         for (int y = 0; y < heightPx; y++)
         {
-            float t = (float)(heightPx - 1 - y) / Math.Max(1, heightPx - 1); // 0=顶部(高频) 1=底部(低频)
-            float pos = t * (bandCount - 1);
-            _rowBandPos[y] = pos;
-            HsvToRgb(pos / bandCount * 300f, 0.95f, 1f,
+            float t = (float)(heightPx - 1 - y) / Math.Max(1, heightPx - 1); // 0=底部 1=顶部
+            HsvToRgb(240f + t * 150f % 360f, 1f, 1f,   // 蓝240 → 紫270 → 粉300~330 → 红/橙0~30
                 out _rowColor[y * 3], out _rowColor[y * 3 + 1], out _rowColor[y * 3 + 2]);
         }
     }
@@ -38,70 +41,42 @@ public sealed class EdgeRenderer
     public void Draw(WriteableBitmap bitmap, SpectrumFrame frame, float intensity, float alpha)
     {
         int stride = _width * 4;
-        int bandMax = _bandCount - 1;
         bitmap.Lock();
         unsafe
         {
             byte* px = (byte*)bitmap.BackBuffer.ToPointer();
             var levels = frame.Levels;
 
-            // 先清透明（逐行）
+            // 1) 聚合全局音量（RMS-like + Peak）
+            float vol = AggregateVolume(levels, frame.Peak) * intensity;
+            vol = MathF.Min(1.25f, vol);
+
+            // 2) 目标高度映射：静音~3%，小音量~15-25%，正常~40-60%，大声~80-100%
+            float targetH = MathF.Min(1f, 0.03f + vol * 0.95f);
+
+            // 3) attack / release 平滑：上升快、回落慢 → 防抖动、似液体
+            float k = targetH > _smoothH ? 0.55f : 0.12f;
+            _smoothH += (targetH - _smoothH) * k;
+            if (MathF.Abs(_smoothH) > 1f) _smoothH = 1f;
+            if (MathF.Abs(_smoothH) < 0f) _smoothH = 0f;
+
+            float fillPx = _smoothH * _height;
+            const float glowPx = 24f; // 顶部光晕过渡区
+
+            // 4) 绘制：从底部到 fillPx 连续填充；顶部 glow 柔化淡出
             for (int y = 0; y < _height; y++)
             {
-                byte* row = px + y * stride;
-                for (int x = 0; x < _width; x++)
-                {
-                    row[x * 4 + 3] = 0;
-                }
-            }
+                float rowFromBottom = _height - 1 - y;
+                if (rowFromBottom > fillPx) continue;
 
-            for (int y = 0; y < _height; y++)
-            {
-                float pos = _rowBandPos[y];
+                // 顶部光晕：接近 fillPx 的 glow 区渐隐，其余全亮
+                float glowT = MathF.Min(1f, (fillPx - rowFromBottom) / glowPx); // 0=顶端边缘 1=远离边缘
+                float aBoost = 0.35f + 0.65f * glowT;   // 边缘 35% → 实体 100%
 
-                // 相邻频带线性插值能量（保证纵向连续渐变）
-                int i0 = (int)pos; if (i0 > bandMax) i0 = bandMax;
-                int i1 = Math.Min(i0 + 1, bandMax);
-                float frac = pos - i0;
-                float e0 = levels.Length > i0 ? levels[i0] : 0f;
-                float e1 = levels.Length > i1 ? levels[i1] : 0f;
-                float e = e0 + (e1 - e0) * frac;
-
-                // 进度条填充规则：行位置比例 pos（0=底部 → 1=顶部）
-                // 该行的“门槛”= e（能量越高推得越高）。
-                // 低于门槛的行从底部开始全部点亮，构成“从底部向上推进”的连续填充；
-                // 能量弱时门槛低，点亮的行少（底部区域），上部透明。
-                float rowPos = 1f - (float)y / Math.Max(1, _height - 1); // 0=底部 1=顶部
-                float fill = e * intensity * 1.15f; // 填充门槛（接近1时整条亮）
-                float visibleDepth = fill - rowPos; // >0 表示在填充区内
-
-                if (visibleDepth <= -0.02f) continue; // 明显未填充 → 透明
-
-                // 填充边缘软过渡：-0.02..0.08 之间渐亮，底部全亮
-                float soft = (visibleDepth + 0.02f) / 0.1f;
-                float fillFactor = Math.Clamp(soft, 0f, 1f);
-                float fillPower = MathF.Pow(fillFactor, 0.7f); // 伽马提亮边缘
-
-                // 下一行能量变化率 → 波浪前沿亮线（“推动”感）
-                float eE = 0f;
-                if (y > 0)
-                {
-                    int yi0 = (int)_rowBandPos[y - 1]; if (yi0 > bandMax) yi0 = bandMax;
-                    int yi1 = Math.Min(yi0 + 1, bandMax);
-                    float yf = _rowBandPos[y - 1] - yi0;
-                    float ee0 = levels.Length > yi0 ? levels[yi0] : 0f;
-                    float ee1 = levels.Length > yi1 ? levels[yi1] : 0f;
-                    eE = ee0 + (ee1 - ee0) * yf;
-                }
-                float edge = MathF.Min(1f, MathF.Abs(e - eE) * 10f);
-
-                float brightness = 0.45f + 0.55f * fillPower + 0.35f * edge * fillPower;
-                float a = alpha * MathF.Min(1f, fillPower * (0.75f + 0.15f * edge));
-
-                byte r = (byte)(_rowColor[y * 3] * brightness);
-                byte g = (byte)(_rowColor[y * 3 + 1] * brightness);
-                byte b = (byte)(_rowColor[y * 3 + 2] * brightness);
-                byte aa = (byte)(a * 255);
+                byte r = _rowColor[y * 3];
+                byte g = _rowColor[y * 3 + 1];
+                byte b = _rowColor[y * 3 + 2];
+                byte aa = (byte)(alpha * aBoost * 255);
 
                 byte* row = px + y * stride;
                 for (int x = 0; x < _width; x++)
@@ -118,8 +93,21 @@ public sealed class EdgeRenderer
         bitmap.Unlock();
     }
 
+    /// <summary>全局音量：各频带能量平方均值（RMS 近似）+ 峰值加权。</summary>
+    private static float AggregateVolume(float[] levels, float peak)
+    {
+        if (levels.Length == 0) return peak;
+        double sumSq = 0;
+        foreach (var l in levels) sumSq += (double)l * l;
+        float rms = (float)Math.Sqrt(sumSq / levels.Length);
+        // 峰值反映瞬态，RMS 反映持续能量；权重让打击感与持续音都可见
+        return MathF.Min(1.2f, 0.72f * rms * 2.2f + 0.28f * peak);
+    }
+
     private static void HsvToRgb(float h, float s, float v, out byte r, out byte g, out byte b)
     {
+        h %= 360f;
+        if (h < 0f) h += 360f;
         float c = v * s;
         float x = c * (1f - MathF.Abs((h / 60f % 2f) - 1f));
         float m = v - c;
