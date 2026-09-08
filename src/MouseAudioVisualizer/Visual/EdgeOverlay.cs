@@ -58,8 +58,9 @@ public sealed class EdgeOverlay : IDisposable
 
         _left?.Close();
         _right?.Close();
-        _left = new BarWindow(barW, _vsHeight, wDip, hDip);
-        _right = new BarWindow(barW, _vsHeight, wDip, hDip);
+        // 左右同色谱、不同相位：左以紫(270°)起底，右以青(180°)起底（视觉平衡）
+        _left = new BarWindow(barW, _vsHeight, wDip, hDip, 270f);
+        _right = new BarWindow(barW, _vsHeight, wDip, hDip, 180f);
         _left.SetBarPosition(_vsLeft, _vsTop);
         _right.SetBarPosition(_vsLeft + _vsWidth - barW, _vsTop);
     }
@@ -122,10 +123,11 @@ public sealed class EdgeOverlay : IDisposable
         private int _physWidth;
         private readonly int _physHeight;
 
-        public BarWindow(int widthPhys, int heightPhys, double widthDip, double heightDip)
+        public BarWindow(int widthPhys, int heightPhys, double widthDip, double heightDip, float hueStart)
         {
             _physWidth = widthPhys;
             _physHeight = heightPhys;
+            _hueStart = hueStart;
             Width = widthDip;
             Height = heightDip;
             WindowStyle = WindowStyle.None;
@@ -137,7 +139,7 @@ public sealed class EdgeOverlay : IDisposable
             Topmost = true;
             Focusable = false;
 
-            _renderer = new EdgeRenderer(widthPhys, heightPhys, SpectrumEngine.BandCount);
+            _renderer = new EdgeRenderer(widthPhys, heightPhys, SpectrumEngine.BandCount, _hueStart);
             _bitmap = new WriteableBitmap(widthPhys, heightPhys, 96, 96, PixelFormats.Pbgra32, null);
             _image = new System.Windows.Controls.Image
             {
@@ -161,6 +163,7 @@ public sealed class EdgeOverlay : IDisposable
         private int _posX;
         private int _posY;
         private bool _hasPos;
+        private readonly float _hueStart;
 
         public void SetBarPosition(int xPhys, int yPhys)
         {
@@ -174,7 +177,7 @@ public sealed class EdgeOverlay : IDisposable
         {
             _physWidth = widthPhys;
             Width = widthDip;
-            _renderer = new EdgeRenderer(widthPhys, _physHeight, SpectrumEngine.BandCount);
+            _renderer = new EdgeRenderer(widthPhys, _physHeight, SpectrumEngine.BandCount, _hueStart);
             _bitmap = new WriteableBitmap(widthPhys, _physHeight, 96, 96, PixelFormats.Pbgra32, null);
             _image.Source = _bitmap;
             SetBarPosition(xPhys, yPhys);

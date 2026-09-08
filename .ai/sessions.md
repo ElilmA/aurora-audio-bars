@@ -1,33 +1,32 @@
-# 会话记录 - 2026-09-08 (会话2)
+# 会话记录 - 2026-09-08 (会话3)
 
 ## 任务
 
-将可视化样式从"跟随鼠标的环形频谱"改为"屏幕两边彩色竖向 1mm 宽、全屏高的音频可视化"。
+视觉升级为全色谱 Aurora Neon 能量流 + 修复下降残影。
 
 ## 完成内容
 
-- 新增 Visual/EdgeRenderer.cs:竖向频谱渲染器,48 频带分段,从底部(低频)向上,颜色按 hue 渐变,左右条对称(flip)
-- 新增 Visual/EdgeOverlay.cs:左右两个 BarWindow(1mm 宽 ≈4px @96dpi,高=虚拟屏幕全高),透明置顶点击穿透,定位用 GetSystemMetrics 虚拟屏幕边界
-- 删除 CursorOverlay.cs / RingRenderer.cs(环形/波纹样式)
-- AppHost 改为使用 EdgeOverlay;TrayIcon 移除"样式"子菜单
-- Native.cs 增加 GetSystemMetrics
-- README.md / .ai/memory.md / .ai/sessions.md 更新
+- EdgeRenderer v5:Aurora 全色谱(360°/完整 hue 环,底部紫/青分别起相,中间青绿黄橙红,顶部粉紫回环),慢速 hue drift(12s/圈),顶部液态圆头(bloom+光晕尾 16px),x 向中心亮边缘淡,饱和度/亮度微随音量
+- 左右相位差:左 hueStart=270(紫系)、右 hueStart=180(青系)
+- 残影修复:每帧 Draw 前整图 BGRA 清零(此前只跳过高位行,旧像素残留)
+- EdgeOverlay BarWindow 增加 hueStart 参数,ResizeBar 保留
+- 保留:底部向上、连续、attack/release、高度=音量、60FPS、宽度菜单、点击穿透
 
 ## 修改文件
 
-- src/MouseAudioVisualizer/Visual/{EdgeRenderer.cs, EdgeOverlay.cs(新), Native.cs, CursorOverlay.cs(删), RingRenderer.cs(删)}
-- src/MouseAudioVisualizer/{Program.cs, Shell/TrayIcon.cs}
-- README.md, .ai/memory.md
+- src/MouseAudioVisualizer/Visual/EdgeRenderer.cs(重写 v5)
+- src/MouseAudioVisualizer/Visual/EdgeOverlay.cs(BarWindow hueStart)
+- .ai/memory.md
 
-## 验证结果
+## 验证
 
-- 左右条窗口定位:右条(1916,0,1920,1087)、左条(-1920,0,-1916,1087) 4px 宽全高
-- PrintWindow 验证左条渲染正常(渐变颜色,35/36 行)
-- 右条截图确认粉/紫渐变
-- CPU 播放时 ~0% 单核
+- PrintWindow:左条底部到顶 绿→黄→橙→红→品红→紫→蓝紫(67% 处透明,无残影)
+- 右条:橙红→红→品红→紫→蓝→天蓝→青(同色谱、不同相位)
+- hue drift:t+8s 颜色变化(12s/圈流动生效)
+- CPU 0%
 
 ## 后续注意事项
 
-- 副屏(-1920)用 CopyFromScreen 截图不可靠,需用 PrintWindow 验证窗口内容
-- 多 DPI 显示器混用未实测
-- 真实音乐内容未测
+- 顶部圆头视觉效果(bloom+光晕尾)代码实现,未逐帧截图细验,用户观感可微调 glowTail/bloomPx 常量
+- 色相流动速度=12s/圈,用户要求 8-20s 范围内
+- 测试时注意其他声源会干扰高度观察(浏览器/播放器在放音)

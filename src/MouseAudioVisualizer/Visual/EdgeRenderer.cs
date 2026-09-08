@@ -4,36 +4,41 @@ using MouseAudioVisualizer.Audio;
 namespace MouseAudioVisualizer.Visual;
 
 /// <summary>
-/// 纵向能量条渲染器（重写版）：
-/// 不是频谱柱。呈现为「从屏幕底部向上生长的连续炫彩发光能量带」。
+/// 纵向能量条渲染器（Aurora 升级版）：
+/// 「从屏幕底部向上生长的全色谱 Neon Aurora 能量流」。
 ///
-/// - 驱动：全局音量（RMS + Peak 聚合）→ 单一填充高度（0..1）
-/// - 高度：attack 快 / release 慢 平滑，防抖动
-/// - 形态：底部↔填充高度之间整段连续填充，无分块、无断点
-/// - 渐变色：蓝(底) → 紫 → 粉 → 红/橙(顶)，高饱和高亮度模拟霓虹
-/// - 顶部：约 24px 光晕淡出，边缘柔和（液态顶部）
-/// - 两侧窗口调用同一 renderer 即天然对称。
+/// - 颜色：完整 360° 色相沿高度连续流动（紫→蓝→青→绿→黄→橙→红→粉→紫），
+///   无硬切色块；hue drift 以 12s/圈的极慢速度整体流动。
+/// - 左右两侧通过 hueStart 给不同相位（左紫、右青），仍是同一完整色谱，视觉平衡。
+/// - 主体：高饱和纵向连续渐变；x 方向上中间列更亮、边缘轻微衰减（内光晕）。
+/// - 顶部：液态圆头——核心略上抬至 fillPx+尾晕，顶部 16px 光晕尾渐进消失，
+///   近顶 12px 有轻微 bright bloom（跟随高度移动）。
+/// - 呼吸感：亮度/饱和度随当前音量轻微变化（非闪烁）。
+/// - 每帧绘制前整图清零 → 无残影，只有当前这一帧。
+/// - 保真项：底部向上、连续、attack/release、高度=音量、60FPS 均保留。
 /// </summary>
 public sealed class EdgeRenderer
 {
     private readonly int _width;
     private readonly int _height;
     private readonly int _bandCount;
-    private readonly byte[] _rowColor;   // 行 → 绝对位置的渐变 RGB (r,g,b)，底蓝顶橙
+    private readonly float[] _rowPos;   // 行 → 高度比例 [0..1]（0=底部 1=顶部）
+    private readonly float _hueStart;   // 起始色相（底部），左右不同
+    private readonly long _t0;          // 用于 hue drift 计时
 
     private float _smoothH;     // 平滑后的填充高度（0..1）
 
-    public EdgeRenderer(int widthPx, int heightPx, int bandCount)
+    public EdgeRenderer(int widthPx, int heightPx, int bandCount, float hueStart)
     {
         _width = widthPx;
         _height = heightPx;
         _bandCount = bandCount;
-        _rowColor = new byte[heightPx * 3];
+        _hueStart = hueStart;
+        _t0 = Environment.TickCount64;
+        _rowPos = new float[heightPx];
         for (int y = 0; y < heightPx; y++)
         {
-            float t = (float)(heightPx - 1 - y) / Math.Max(1, heightPx - 1); // 0=底部 1=顶部
-            HsvToRgb(240f + t * 150f % 360f, 1f, 1f,   // 蓝240 → 紫270 → 粉300~330 → 红/橙0~30
-                out _rowColor[y * 3], out _rowColor[y * 3 + 1], out _rowColor[y * 3 + 2]);
+            _rowPos[y] = (float)(heightPx - 1 - y) / Math.Max(1, heightPx - 1); // 0=底部 1=顶部
         }
     }
 
@@ -41,13 +46,14 @@ public sealed class EdgeRenderer
     public void Draw(WriteableBitmap bitmap, SpectrumFrame frame, float intensity, float alpha)
     {
         int stride = _width * 4;
+        int halfW = _width / 2;
         bitmap.Lock();
         unsafe
         {
             byte* px = (byte*)bitmap.BackBuffer.ToPointer();
             var levels = frame.Levels;
 
-            // 1) 聚合全局音量（RMS-like + Peak）
+            // 1) 聚合全局音量（RMS + Peak）
             float vol = AggregateVolume(levels, frame.Peak) * intensity;
             vol = MathF.Min(1.25f, vol);
 
@@ -57,13 +63,10 @@ public sealed class EdgeRenderer
             // 3) attack / release 平滑：上升快、回落慢 → 防抖动、似液体
             float k = targetH > _smoothH ? 0.55f : 0.12f;
             _smoothH += (targetH - _smoothH) * k;
-            if (MathF.Abs(_smoothH) > 1f) _smoothH = 1f;
-            if (MathF.Abs(_smoothH) < 0f) _smoothH = 0f;
+            if (_smoothH > 1f) _smoothH = 1f;
+            if (_smoothH < 0f) _smoothH = 0f;
 
-            float fillPx = _smoothH * _height;
-            const float glowPx = 24f; // 顶部光晕过渡区
-
-            // 4) 先清空整张 bitmap：上一帧内容必须完全消失（残影 bug 修复）
+            // 4) 每帧先清空整张 bitmap（防残影：上一帧必须完全消失）
             for (int y = 0; y < _height; y++)
             {
                 byte* row = px + y * stride;
@@ -76,28 +79,72 @@ public sealed class EdgeRenderer
                 }
             }
 
-            // 5) 绘制：从底部到 fillPx 连续填充；顶部 glow 柔化淡出
+            float fillPx = _smoothH * _height;
+
+            // 5) 色谱流动相位：12 秒走完一整圈（很慢，不像彩灯）
+            float drift = ((Environment.TickCount64 - _t0) % 12000L) / 12000f * 360f;
+
+            // 6) 呼吸感：亮度/饱和随音量微调（跟随音频，非闪烁）
+            float s = 0.92f + 0.08f * MathF.Min(1f, vol);
+            float v = 0.84f + 0.16f * MathF.Min(1f, vol);
+
+            const float glowTail = 16f;   // 顶部光晕尾（超过 fillPx 向上）
+            const float bloomPx = 12f;    // 近顶 bright bloom 区
+
+            // 7) 绘制：核心 0→fillPx + 顶部液态圆头（bloom + 光晕尾）
             for (int y = 0; y < _height; y++)
             {
                 float rowFromBottom = _height - 1 - y;
-                if (rowFromBottom > fillPx) continue;
+                float top = fillPx + glowTail;                 // 含光晕尾的上界
+                if (rowFromBottom > top) continue;
 
-                // 顶部光晕：接近 fillPx 的 glow 区渐隐，其余全亮
-                float glowT = MathF.Min(1f, (fillPx - rowFromBottom) / glowPx); // 0=顶端边缘 1=远离边缘
-                float aBoost = 0.35f + 0.65f * glowT;   // 边缘 35% → 实体 100%
+                float pos = _rowPos[y];
 
-                byte r = _rowColor[y * 3];
-                byte g = _rowColor[y * 3 + 1];
-                byte b = _rowColor[y * 3 + 2];
-                byte aa = (byte)(alpha * aBoost * 255);
+                // 全色谱 hue：紫→蓝→青→绿→黄→橙→红→粉→紫（一整圈连续）
+                float hue = _hueStart - pos * 360f + drift;
+                hue %= 360f;
+                if (hue < 0f) hue += 360f;
+                HsvToRgb(hue, s, v, out byte r, out byte g, out byte b);
+
+                // 顶部形态：核心区 / bloom 隆起 / 光晕尾
+                float aScale;  // 该行整体 alpha 系数（0..1+）
+                float bright = 1f;
+                if (rowFromBottom >= fillPx)
+                {
+                    // 光晕尾：>fillPx 的渐变消失（液态顶端呼吸）
+                    float t = (top - rowFromBottom) / glowTail;       // 1→0
+                    aScale = 0.55f * t * t;                            // 平方衰减，柔和
+                }
+                else
+                {
+                    // 核心区全亮；近顶轻轻 bloom 隆起（发光圆头）
+                    aScale = 1f;
+                    float distTop = fillPx - rowFromBottom;            // 距填充顶
+                    if (distTop < bloomPx)
+                    {
+                        float t = 1f - distTop / bloomPx;              // 0→1
+                        bright = 1f + 0.14f * t * (1f - t) * 4f;       // 中部微微隆起
+                    }
+                }
+
+                float a = alpha * Math.Clamp(aScale, 0f, 1f);
+                if (a <= 0.003f) continue;
+
+                byte rr = (byte)MathF.Min(255f, r * bright);
+                byte gg = (byte)MathF.Min(255f, g * bright);
+                byte bb = (byte)MathF.Min(255f, b * bright);
+                byte aa = (byte)(a * 255);
 
                 byte* row = px + y * stride;
                 for (int x = 0; x < _width; x++)
                 {
+                    // x 方向：中心列更亮、边缘轻微衰减（内部光晕感）
+                    int dx = Math.Abs(x - halfW);
+                    float edge = dx <= 0 ? 1f : 0.88f + 0.12f * (1f - (float)dx / Math.Max(1f, halfW));
                     int o = x * 4;
-                    row[o] = b;
-                    row[o + 1] = g;
-                    row[o + 2] = r;
+                    row[o] = (byte)(bb * edge);
+                    row[o + 1] = (byte)(gg * edge);
+                    row[o + 2] = (byte)(rr * edge);
                     row[o + 3] = aa;
                 }
             }
