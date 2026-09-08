@@ -66,6 +66,20 @@ public sealed class TrayIcon : IDisposable
             autoStart.Checked = _host.IsAutoStartEnabled;
         };
 
+        var width = new ToolStripMenuItem("条宽");
+        foreach (var (label, mm) in new[] { ("1mm", 1.0), ("2mm", 2.0), ("3mm", 3.0), ("5mm", 5.0), ("8mm", 8.0) })
+        {
+            var item = new ToolStripMenuItem(label) { Checked = Math.Abs(mm - _host.BarWidthMm) < 0.01 };
+            double v = mm;
+            item.Click += (_, _) =>
+            {
+                _host.SetBarWidthMm(v);
+                foreach (ToolStripMenuItem s in width.DropDownItems) s.Checked = false;
+                item.Checked = true;
+            };
+            width.DropDownItems.Add(item);
+        }
+
         var exit = new ToolStripMenuItem("退出");
         exit.Click += (_, _) => System.Windows.Application.Current.Shutdown();
 
@@ -73,6 +87,7 @@ public sealed class TrayIcon : IDisposable
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(intensity);
         menu.Items.Add(opacity);
+        menu.Items.Add(width);
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(autoStart);
         menu.Items.Add(new ToolStripSeparator());

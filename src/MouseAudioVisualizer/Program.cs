@@ -48,7 +48,12 @@ public sealed class AppHost : IDisposable
         if (_overlay != null) _overlay.Opacity2 = value;
     }
 
-    public void SetStyle(int _) { }
+    public void SetBarWidthMm(double mm)
+    {
+        if (_overlay != null) _overlay.SetBarWidthMm(mm);
+    }
+
+    public double BarWidthMm => _overlay?.BarWidthMm ?? 1.0;
 
     public void SetAutoStart(bool enabled)
     {
@@ -71,16 +76,27 @@ public static class Program
     private static AppHost? _host;
 
     [STAThread]
-    public static void Main()
+    public static void Main(string[] args)
     {
+        double? barWidthMm = null;
+        for (int i = 0; i < args.Length - 1; i++)
+        {
+            if (args[i] == "--bar-width-mm" && double.TryParse(args[i + 1], out double mm))
+            {
+                barWidthMm = mm;
+            }
+        }
+
         var app = new System.Windows.Application
         {
             ShutdownMode = ShutdownMode.OnExplicitShutdown,
         };
         app.Startup += (_, _) =>
         {
+            double w = barWidthMm ?? 1.0;
             _host = new AppHost();
             _host.Start();
+            _host.SetBarWidthMm(w);
         };
         app.Exit += (_, _) => _host?.Dispose();
         app.Run();

@@ -4,72 +4,100 @@ using MouseAudioVisualizer.Audio;
 namespace MouseAudioVisualizer.Visual;
 
 /// <summary>
-/// 竖向频谱渲染器：将整屏高度按频带分段，每段高度 = 屏高 / bandCount。
-/// 每个频带对应一种颜色（底部低频 → 顶部高频彩虹渐变），能量驱动该段点亮。
-/// 写入竖条 WriteableBitmap（宽 barWidth 物理像素，高 屏高物理像素）。
+/// 竖向频谱渲染器（连续版）：
+/// 整条高度逐行渲染，每行对应一个“连续频带位置”（对数谱插值，无分块感），
+/// 亮度 = 相邻频带线性插值能量 + 波浪前沿（能量变化率）亮线，
+/// 呈现“从底部向上推动的波形”效果。底部低频、顶部高频，彩虹连续渐变。
 /// </summary>
 public sealed class EdgeRenderer
 {
     private readonly int _width;
     private readonly int _height;
     private readonly int _bandCount;
-    private readonly int _segHeight;        // 每段像素高度
-    private readonly byte[] _colorCache;     // band → BGR (b,g,r)
+    private readonly float[] _rowBandPos;   // 行 → 连续频带位置 [0..bandCount-1]
+    private readonly byte[] _rowColor;      // 行 → 基础色 RGB (r,g,b)
 
     public EdgeRenderer(int widthPx, int heightPx, int bandCount)
     {
         _width = widthPx;
         _height = heightPx;
         _bandCount = bandCount;
-        _segHeight = Math.Max(1, heightPx / bandCount);
-        _colorCache = new byte[bandCount * 3];
-        for (int b = 0; b < bandCount; b++)
+        _rowBandPos = new float[heightPx];
+        _rowColor = new byte[heightPx * 3];
+        for (int y = 0; y < heightPx; y++)
         {
-            // 色相从低频(蓝/青)到高频(紫/粉)：hue 0→300
-            HsvToRgb((float)b / bandCount * 300f, 0.85f, 1f,
-                out _colorCache[b * 3 + 2], out _colorCache[b * 3 + 1], out _colorCache[b * 3]);
+            float t = (float)(heightPx - 1 - y) / Math.Max(1, heightPx - 1); // 0=顶部(高频) 1=底部(低频)
+            float pos = t * (bandCount - 1);
+            _rowBandPos[y] = pos;
+            HsvToRgb(pos / bandCount * 300f, 0.95f, 1f,
+                out _rowColor[y * 3], out _rowColor[y * 3 + 1], out _rowColor[y * 3 + 2]);
         }
     }
 
     /// <summary>将频谱帧绘制到竖条 bitmap（Pbgra32，尺寸与构造一致）。</summary>
-    public void Draw(WriteableBitmap bitmap, SpectrumFrame frame, float intensity, float alpha, bool flip)
+    public void Draw(WriteableBitmap bitmap, SpectrumFrame frame, float intensity, float alpha)
     {
         int stride = _width * 4;
+        int bandMax = _bandCount - 1;
         bitmap.Lock();
         unsafe
         {
             byte* px = (byte*)bitmap.BackBuffer.ToPointer();
             var levels = frame.Levels;
 
-            // 逐段：段 b 位于 [height - (b+1)*segHeight, height - b*segHeight)
-            for (int b = 0; b < _bandCount; b++)
+            // 先清透明（逐行）
+            for (int y = 0; y < _height; y++)
             {
-                int srcBand = flip ? (_bandCount - 1 - b) : b;
-                float level = srcBand < levels.Length ? levels[srcBand] : 0f;
-                float lv = MathF.Min(1f, level * intensity);
-                if (lv <= 0.004f) continue;
+                byte* row = px + y * stride;
+                for (int x = 0; x < _width; x++)
+                {
+                    row[x * 4 + 3] = 0;
+                }
+            }
 
-                float brightness = 0.3f + 0.7f * lv;
-                float a = MathF.Min(1f, lv * 1.2f) * alpha;
-                byte r = (byte)(_colorCache[b * 3 + 2] * brightness);
-                byte g = (byte)(_colorCache[b * 3 + 1] * brightness);
-                byte bl = (byte)(_colorCache[b * 3] * brightness);
+            for (int y = 0; y < _height; y++)
+            {
+                float pos = _rowBandPos[y];
+
+                // 相邻频带线性插值能量（保证纵向连续渐变）
+                int i0 = (int)pos; if (i0 > bandMax) i0 = bandMax;
+                int i1 = Math.Min(i0 + 1, bandMax);
+                float frac = pos - i0;
+                float e0 = levels.Length > i0 ? levels[i0] : 0f;
+                float e1 = levels.Length > i1 ? levels[i1] : 0f;
+                float e = e0 + (e1 - e0) * frac;
+                float lv = MathF.Min(1f, e * intensity);
+                if (lv <= 0.01f) continue;
+
+                // 下一行能量变化率 → 波浪前沿亮线（“推动”感）
+                float eE = 0f;
+                if (y > 0)
+                {
+                    int yi0 = (int)_rowBandPos[y - 1]; if (yi0 > bandMax) yi0 = bandMax;
+                    int yi1 = Math.Min(yi0 + 1, bandMax);
+                    float yf = _rowBandPos[y - 1] - yi0;
+                    float ee0 = levels.Length > yi0 ? levels[yi0] : 0f;
+                    float ee1 = levels.Length > yi1 ? levels[yi1] : 0f;
+                    eE = ee0 + (ee1 - ee0) * yf;
+                }
+                float edge = MathF.Min(1f, MathF.Abs(e - eE) * 10f);
+
+                float brightness = 0.5f + 0.5f * lv;
+                float a = alpha * MathF.Min(1f, 0.6f + 0.4f * lv + edge * 0.6f);
+
+                byte r = (byte)(_rowColor[y * 3] * brightness);
+                byte g = (byte)(_rowColor[y * 3 + 1] * brightness);
+                byte b = (byte)(_rowColor[y * 3 + 2] * brightness);
                 byte aa = (byte)(a * 255);
 
-                int y0 = _height - (b + 1) * _segHeight;
-                int y1 = _height - b * _segHeight;
-                for (int y = y0; y < y1; y++)
+                byte* row = px + y * stride;
+                for (int x = 0; x < _width; x++)
                 {
-                    if (y < 0 || y >= _height) continue;
-                    byte* row = px + y * stride;
-                    for (int x = 0; x < _width; x++)
-                    {
-                        int o = x * 4;
-                        row[o] = bl;
-                        row[o + 1] = g;
-                        row[o + 2] = r;
-                        row[o + 3] = aa;
-                    }
+                    int o = x * 4;
+                    row[o] = b;
+                    row[o + 1] = g;
+                    row[o + 2] = r;
+                    row[o + 3] = aa;
                 }
             }
         }
