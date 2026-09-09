@@ -1,6 +1,6 @@
 # 项目记忆 - Mouse Audio Visualizer
 
-> 更新:2026-09-09 (v4)
+> 更新:2026-09-09 (v5)
 
 ## 声道分离（2026-09-09，新增）
 
@@ -12,6 +12,9 @@
 
 ## 发布状态(2026-09-09)
 
+- **v1.1.0（声道分离版）**：commit 66244c0 已推 main；tag v1.1.0；https://github.com/ElilmA/aurora-audio-bars/releases/tag/v1.1.0
+  - 资产：MouseAudioVisualizer.exe(71852188 B) + Aurora-Audio-Bars-v1.1.0-win-x64.zip(66265523 B)，产物在 bin/Release/publish-v1.1.0/（gitignore）
+  - 上传经验更新：`gh release upload` 首次在 ~900s 超时未成功是**偶发**，直接重试第二次即成功(exit=0)，勿连续反复尝试
 - **仓库**:github.com/ElilmA/aurora-audio-bars
 - **首个 Release**:v1.0.0(非草稿、正式版),https://github.com/ElilmA/aurora-audio-bars/releases/tag/v1.0.0
 - **发布命令**:`dotnet publish src/MouseAudioVisualizer -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true` → 单文件 exe ≈72MB(含运行时+压缩)

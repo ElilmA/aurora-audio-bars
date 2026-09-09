@@ -7,4 +7,5 @@ publish/
 *.wav
 *.mp3
 *.png
+!assets/*.png
 .DS_Store

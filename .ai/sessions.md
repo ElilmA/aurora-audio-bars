@@ -1,5 +1,23 @@
 ﻿# 会话记录
 
+## 2026-09-09 (会话6) - 提交声道分离 + 发布 v1.1.0
+
+### 任务
+声道分离代码发布到远程，并发布 v1.1.0 Release。
+
+### 完成内容
+- commit 66244c0「feat: stereo channel split - left/right bar per channel with tray toggle」含源码+README+.ai，已推 main
+- dotnet publish win-x64 自包含单文件 v1.1.0（exe 71852188 B + zip 66265523 B），产物 bin/Release/publish-v1.1.0/
+- tag v1.1.0 推送；gh release draft + 分条 upload（zip 首次超时、重试成功）+ 转正式
+
+### 验证
+- 发布链接：https://github.com/ElilmA/aurora-audio-bars/releases/tag/v1.1.0（两资产 uploaded，sha256 正常）
+- git push 成功（6e50ceb..66244c0）
+
+### 后续注意事项
+- 未提交 .ai 记忆更新（memory/sessions/conversations），下轮可并入下一次提交
+- 全屏独占游戏无法覆盖已答复用户（系统限制），不加菜单项
+
 ## 2026-09-09 (会话5) - 左右声道分离
 
 ### 任务
