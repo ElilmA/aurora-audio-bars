@@ -12,6 +12,7 @@ Windows 系统音频实时可视化：屏幕左右两侧各一条从底部向上
 - **液态顶端**：顶部 bloom 发光圆头 + 光晕尾，随音量呼吸
 - **声音驱动**：WASAPI Loopback 采集系统输出（NAudio 2.2.1，MIT）；2048 点 FFT + Hann 窗 + AGC 自动增益，单一全局音量映射高度
 - **两侧对称、相位不同**：左以紫起色、右以青起色（同一色谱，视觉平衡）
+- **左右声道分离（可选）**：托盘开启后，左条只显示左声道、右条只显示右声道；关闭时两侧显示合并后的整体音量（默认关闭）
 - **宽度可调**：托盘/命令行 1–8mm 档位
 - **透明置顶、点击穿透**（WS_EX_TRANSPARENT + LAYERED + TOOLWINDOW + NOACTIVATE）
 - **多显示器** + Per-Monitor V2 DPI 感知
@@ -32,6 +33,7 @@ src/MouseAudioVisualizer/bin/Release/net8.0-windows/MouseAudioVisualizer.exe --b
 ## 托盘
 
 - 启用/禁用
+- 声道分离：左条=左声道 / 右条=右声道（可开关，默认关闭）
 - 强度：低 0.6x / 中 1.0x / 高 1.6x
 - 透明度：90% / 70% / 50% / 30%
 - 条宽：1mm / 2mm / 3mm / 5mm / 8mm

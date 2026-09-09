@@ -1,6 +1,23 @@
 # 项目记忆 - Mouse Audio Visualizer
 
-> 更新:2026-09-08 (v2)
+> 更新:2026-09-09 (v4)
+
+## 声道分离（2026-09-09，新增）
+
+- **需求**：左条=左声道、右条=右声道，托盘可开关。
+- **捕获**：AudioCapture 从「单声道混音 ring」改为 **L/R 双 ring**。帧内按通道索引奇偶拆分：偶索引→左、奇索引→右（立体声=原生 L/R；单声道右镜像左；5.1/7.1 近似左右下混）。API：`ReadLR(left,right,count)` 分声道读；`Read()` 保留为左右均值=原复合行为（SpectrumProbe 兼容）。
+- **分析**：AudioEngine 维护 **3 组**滚动窗口与 SpectrumEngine（mono 复合 + L + R，各自独立 FFT/AGC/平滑）。`ChannelSplit`(volatile) 托盘实时切换：分离→每声道独立 Analyze；复合→左右均值窗口单引擎 Analyze。暴露 `Left/Right` 属性（分离=L/R，复合=同一复合帧），不再有 `Current`。
+- **渲染**：EdgeOverlay.Render 分别用 `Left`/`Right` 画左右条。默认关闭（行为与旧版完全一致）。
+- 声道分离开启后 AGC 各自独立 → 左右音量差会真实反映左右电平差。
+
+## 发布状态(2026-09-09)
+
+- **仓库**:github.com/ElilmA/aurora-audio-bars
+- **首个 Release**:v1.0.0(非草稿、正式版),https://github.com/ElilmA/aurora-audio-bars/releases/tag/v1.0.0
+- **发布命令**:`dotnet publish src/MouseAudioVisualizer -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true` → 单文件 exe ≈72MB(含运行时+压缩)
+- **资产**:MouseAudioVisualizer.exe(71851451 B)+ Aurora-Audio-Bars-v1.0.0-win-x64.zip(66265058 B,含 exe+README 改名的"使用说明.txt"),输出到 bin/Release/publish-v1.0.0/ 且被 gitignore
+- **上传经验**:一次 `gh release create` 带两个大资产会因 ~300s 超时中断 → 先建 draft 再逐条 `gh release upload --clobber` 可完成;上传完需 `gh release edit --draft=false` 转正式
+- tag v1.0.0 已推送 origin
 
 ## 项目目标
 
@@ -50,5 +67,5 @@
 - 多 DPI 显示器混用(如 150% 屏)时条宽换算可能不准,需实测。
 - 蓝牙/虚拟声卡 loopback 异常未测。
 - 全屏独占游戏不显示悬浮层(系统限制)。
-- 单文件发布未做。
 - 无 LICENSE 项目(CursorTrail/chromascope)仅参考,未复制代码。
+- **发布产物为自包含 win-x64,尚未验证真机(非本机)Win10/Win11 运行与杀软误报情况。**

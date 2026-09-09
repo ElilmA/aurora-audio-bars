@@ -1,30 +1,52 @@
 namespace MouseAudioVisualizer.Audio;
 
 /// <summary>
-/// 音频宿主：后台线程循环读取环形缓冲 → 频谱分析，
-/// 通过 Current 暴露最新 SpectrumFrame 供渲染线程读取（volatile 引用交换）。
+/// 音频宿主：后台线程循环读取环形缓冲（左右声道）→ 频谱分析。
+///
+/// 两种模式（可托盘实时切换）：
+/// - 声道分离关闭（默认）：左右采样均值合成为单一频谱，左右条显示相同内容（原行为）。
+/// - 声道分离开启：左声道、右声道各自独立 FFT/AGC/平滑，左条=左声道、右条=右声道。
+///
+/// 通过 Left / Right 暴露最新频谱帧供渲染线程读取（volatile 引用交换）。
 /// 采用 50% 重叠分析，帧率约 2× 窗口刷新率，提升平滑度。
 /// </summary>
 public sealed class AudioEngine : IDisposable
 {
     private readonly AudioCapture _capture;
-    private readonly SpectrumEngine _spectrum;
+    private readonly SpectrumEngine _spectrumMono; // 复合（左右均值）
+    private readonly SpectrumEngine _spectrumL;    // 左声道
+    private readonly SpectrumEngine _spectrumR;    // 右声道
     private readonly Thread _thread;
-    private readonly float[] _analysis = new float[SpectrumEngine.FftSize];
-    private readonly float[] _readBuf = new float[SpectrumEngine.FftSize];
-    private volatile SpectrumFrame? _current;
+
+    private readonly float[] _readL = new float[SpectrumEngine.FftSize];
+    private readonly float[] _readR = new float[SpectrumEngine.FftSize];
+    private readonly float[] _analysisMono = new float[SpectrumEngine.FftSize];
+    private readonly float[] _analysisL = new float[SpectrumEngine.FftSize];
+    private readonly float[] _analysisR = new float[SpectrumEngine.FftSize];
+
+    private volatile SpectrumFrame? _frameMono;
+    private volatile SpectrumFrame? _frameL;
+    private volatile SpectrumFrame? _frameR;
     private volatile bool _running;
+    private volatile bool _channelSplit;
 
     public AudioCapture Capture => _capture;
-    public SpectrumEngine Spectrum => _spectrum;
-    public SpectrumFrame? Current => _current;
+    public bool ChannelSplit { get => _channelSplit; set => _channelSplit = value; }
+
+    /// <summary>左条使用的帧：分离=左声道；复合=左右均值。</summary>
+    public SpectrumFrame? Left => _channelSplit ? _frameL : _frameMono;
+    /// <summary>右条使用的帧：分离=右声道；复合=左右均值。</summary>
+    public SpectrumFrame? Right => _channelSplit ? _frameR : _frameMono;
 
     public event Action<Exception>? Error;
 
     public AudioEngine()
     {
         _capture = new AudioCapture();
-        _spectrum = new SpectrumEngine(_capture.SampleRate);
+        int sr = _capture.SampleRate;
+        _spectrumMono = new SpectrumEngine(sr);
+        _spectrumL = new SpectrumEngine(sr);
+        _spectrumR = new SpectrumEngine(sr);
         _thread = new Thread(Loop) { IsBackground = true, Name = "AudioEngine" };
     }
 
@@ -55,16 +77,46 @@ public sealed class AudioEngine : IDisposable
             }
             last = now;
 
-            int got = _capture.Read(_readBuf, step);
+            int got = _capture.ReadLR(_readL, _readR, step);
             if (got < step)
             {
                 Thread.Sleep(2);
                 continue;
             }
-            // 滚动：把已有分析窗口左移 step
-            Array.Copy(_analysis, step, _analysis, 0, SpectrumEngine.FftSize - step);
-            Array.Copy(_readBuf, 0, _analysis, SpectrumEngine.FftSize - step, step);
-            _current = _spectrum.Analyze(_analysis);
+
+            if (_channelSplit)
+            {
+                // 分离模式：左右各独立滚动分析窗口 + 独立 FFT/AGC/平滑
+                Roll(_analysisL, _readL, step);
+                Roll(_analysisR, _readR, step);
+                _frameL = _spectrumL.Analyze(_analysisL);
+                _frameR = _spectrumR.Analyze(_analysisR);
+            }
+            else
+            {
+                // 复合模式：左右均值合成单声道分析窗口
+                Roll(_analysisMono, _readL, _readR, step);
+                _frameMono = _spectrumMono.Analyze(_analysisMono);
+            }
+        }
+    }
+
+    /// <summary>滚动窗口：左移 step，把新读入的 step 个采样放到尾部。</summary>
+    private static void Roll(float[] analysis, float[] read, int step)
+    {
+        int size = SpectrumEngine.FftSize;
+        Array.Copy(analysis, step, analysis, 0, size - step);
+        Array.Copy(read, 0, analysis, size - step, step);
+    }
+
+    /// <summary>滚动窗口（复合）：尾部写入左右均值。</summary>
+    private static void Roll(float[] analysis, float[] readL, float[] readR, int step)
+    {
+        int size = SpectrumEngine.FftSize;
+        Array.Copy(analysis, step, analysis, 0, size - step);
+        for (int i = 0; i < step; i++)
+        {
+            analysis[size - step + i] = (readL[i] + readR[i]) * 0.5f;
         }
     }
 

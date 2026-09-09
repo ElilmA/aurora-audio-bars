@@ -59,6 +59,13 @@ public sealed class TrayIcon : IDisposable
             opacity.DropDownItems.Add(item);
         }
 
+        var channelSplit = new ToolStripMenuItem("声道分离 (左=左声道/右=右声道)") { Checked = _host.ChannelSplit };
+        channelSplit.Click += (_, _) =>
+        {
+            _host.ChannelSplit = !channelSplit.Checked;
+            channelSplit.Checked = _host.ChannelSplit;
+        };
+
         var autoStart = new ToolStripMenuItem("开机自启") { Checked = IsAutoStartEnabled };
         autoStart.Click += (_, _) =>
         {
@@ -87,6 +94,7 @@ public sealed class TrayIcon : IDisposable
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(intensity);
         menu.Items.Add(opacity);
+        menu.Items.Add(channelSplit);
         menu.Items.Add(width);
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(autoStart);

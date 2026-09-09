@@ -13,6 +13,12 @@ public sealed class AppHost : IDisposable
 
     public bool IsEnabled => _enabled;
 
+    public bool ChannelSplit
+    {
+        get => _engine.ChannelSplit;
+        set => _engine.ChannelSplit = value;
+    }
+
     public AppHost()
     {
         Native.TrySetDpiAwareness();

@@ -98,10 +98,11 @@ public sealed class EdgeOverlay : IDisposable
 
     private void Render()
     {
-        var frame = _engine.Current;
-        if (frame == null) return;
-        _left?.Draw(frame, Intensity, Opacity2);
-        _right?.Draw(frame, Intensity, Opacity2);
+        var leftFrame = _engine.Left;
+        var rightFrame = _engine.Right;
+        if (leftFrame == null || rightFrame == null) return;
+        _left?.Draw(leftFrame, Intensity, Opacity2);
+        _right?.Draw(rightFrame, Intensity, Opacity2);
     }
 
     public void Show()
